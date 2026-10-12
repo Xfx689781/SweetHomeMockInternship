@@ -725,61 +725,101 @@ public class FurnitureTable extends JTable implements View, Printable {
 
   /**
    * Prints this component to make it fill <code>pageFormat</code> imageable size.
+   * A Level column is added to the printed copy of the table when printed furniture belongs to levels.
    */
   public int print(Graphics g, PageFormat pageFormat, int pageIndex) throws PrinterException {
-    // Create a printable column model from the column model of this table 
+    // Create a printable column model from the column model of this table
     // with printable renderers for each column
     DefaultTableColumnModel printableColumnModel = new DefaultTableColumnModel();
     TableColumnModel columnModel = getColumnModel();
     final DefaultTableCellRenderer defaultRenderer = new DefaultTableCellRenderer();
     defaultRenderer.setHorizontalAlignment(DefaultTableCellRenderer.CENTER);
     TableCellRenderer printableHeaderRenderer = new TableCellRenderer() {
-        public Component getTableCellRendererComponent(JTable table, Object value, 
-                                   boolean isSelected, boolean hasFocus, int row, int column) {
-          // Delegate rendering to default cell renderer
-          JLabel headerRendererLabel = (JLabel)defaultRenderer.getTableCellRendererComponent(table, value, 
-              isSelected, hasFocus, row, column);
-          // Don't display sort icon
-          headerRendererLabel.setIcon(null);
-          // Change header background and foreground
-          headerRendererLabel.setBackground(Color.LIGHT_GRAY);
-          headerRendererLabel.setForeground(Color.BLACK);
-          headerRendererLabel.setBorder(BorderFactory.createCompoundBorder(
-              BorderFactory.createLineBorder(Color.BLACK),
-              headerRendererLabel.getBorder()));
-          return headerRendererLabel;
-        }
-      };
-    for (int columnIndex = 0, n = columnModel.getColumnCount(); columnIndex < n; columnIndex++) {
-      final TableColumn tableColumn = columnModel.getColumn(columnIndex);
-      // Create a printable column from existing table column
-      TableColumn printableColumn = new TableColumn();
-      printableColumn.setIdentifier(tableColumn.getIdentifier());
-      printableColumn.setHeaderValue(tableColumn.getHeaderValue());
-      TableCellRenderer printableCellRenderer = new TableCellRenderer() {
-          public Component getTableCellRendererComponent(JTable table, Object value, 
-                                 boolean isSelected, boolean hasFocus, int row, int column) {
-            // Delegate rendering to existing cell renderer 
-            TableCellRenderer cellRenderer = tableColumn.getCellRenderer();
-            Component rendererComponent = cellRenderer.getTableCellRendererComponent(table, value, 
+      public Component getTableCellRendererComponent(JTable table, Object value,
+                                                     boolean isSelected, boolean hasFocus, int row, int column) {
+        // Delegate rendering to default cell renderer
+        JLabel headerRendererLabel = (JLabel)defaultRenderer.getTableCellRendererComponent(table, value,
                 isSelected, hasFocus, row, column);
-            if (rendererComponent instanceof JCheckBox) {
-              // Prefer a x sign for boolean values instead of check boxes
-              rendererComponent = defaultRenderer.getTableCellRendererComponent(table, 
-                  ((JCheckBox)rendererComponent).isSelected() ? "x" : "", false, false, row, column);
-            }
-            rendererComponent.setBackground(Color.WHITE);
-            rendererComponent.setForeground(Color.BLACK);
-            return rendererComponent;
-          }
-        };
-      // Change printable column cell renderer 
-      printableColumn.setCellRenderer(printableCellRenderer);
-      // Change printable column header renderer
-      printableColumn.setHeaderRenderer(printableHeaderRenderer);
-      printableColumnModel.addColumn(printableColumn);
-    }    
+        // Don't display sort icon
+        headerRendererLabel.setIcon(null);
+        // Change header background and foreground
+        headerRendererLabel.setBackground(Color.LIGHT_GRAY);
+        headerRendererLabel.setForeground(Color.BLACK);
+        headerRendererLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Color.BLACK),
+                headerRendererLabel.getBorder()));
+        return headerRendererLabel;
+      }
+    };
+
+    boolean levelColumnPrinted = false;
+    for (int columnIndex = 0, n = columnModel.getColumnCount(); columnIndex < n; columnIndex++) {
+      TableColumn tableColumn = columnModel.getColumn(columnIndex);
+      printableColumnModel.addColumn(createPrintableColumn(tableColumn, defaultRenderer, printableHeaderRenderer));
+      if (tableColumn.getIdentifier() == HomePieceOfFurniture.SortableProperty.LEVEL) {
+        levelColumnPrinted = true;
+      }
+    }
+
+    // Add a Level column to the printed copy of the table (not to the displayed table)
+    // when printed furniture belongs to levels, so that rows of different levels can be distinguished
+    if (!levelColumnPrinted
+            && columnModel instanceof FurnitureTableColumnModel
+            && isFurnitureAtLevelsPrinted()) {
+      TableColumn levelColumn = ((FurnitureTableColumnModel)columnModel).availableColumns.get(
+              HomePieceOfFurniture.SortableProperty.LEVEL);
+      printableColumnModel.addColumn(createPrintableColumn(levelColumn, defaultRenderer, printableHeaderRenderer));
+      if (printableColumnModel.getColumnCount() > 1) {
+        // Place Level column just after the first column (usually Name)
+        printableColumnModel.moveColumn(printableColumnModel.getColumnCount() - 1, 1);
+      }
+    }
     return print(g, pageFormat, pageIndex, printableColumnModel, Color.BLACK);
+  }
+
+  /**
+   * Returns a printable copy of the given table column that delegates rendering
+   * to the column renderer, with a black and white look.
+   */
+  private TableColumn createPrintableColumn(final TableColumn tableColumn,
+                                            final DefaultTableCellRenderer defaultRenderer,
+                                            TableCellRenderer printableHeaderRenderer) {
+    TableColumn printableColumn = new TableColumn();
+    printableColumn.setIdentifier(tableColumn.getIdentifier());
+    printableColumn.setHeaderValue(tableColumn.getHeaderValue());
+    TableCellRenderer printableCellRenderer = new TableCellRenderer() {
+      public Component getTableCellRendererComponent(JTable table, Object value,
+                                                     boolean isSelected, boolean hasFocus, int row, int column) {
+        // Delegate rendering to existing cell renderer
+        TableCellRenderer cellRenderer = tableColumn.getCellRenderer();
+        Component rendererComponent = cellRenderer.getTableCellRendererComponent(table, value,
+                isSelected, hasFocus, row, column);
+        if (rendererComponent instanceof JCheckBox) {
+          // Prefer a x sign for boolean values instead of check boxes
+          rendererComponent = defaultRenderer.getTableCellRendererComponent(table,
+                  ((JCheckBox)rendererComponent).isSelected() ? "x" : "", false, false, row, column);
+        }
+        rendererComponent.setBackground(Color.WHITE);
+        rendererComponent.setForeground(Color.BLACK);
+        return rendererComponent;
+      }
+    };
+    printableColumn.setCellRenderer(printableCellRenderer);
+    printableColumn.setHeaderRenderer(printableHeaderRenderer);
+    return printableColumn;
+  }
+
+  /**
+   * Returns <code>true</code> if one of the rows of this table is a piece that belongs to a level.
+   */
+  private boolean isFurnitureAtLevelsPrinted() {
+    TableModel model = getModel();
+    for (int row = 0, n = model.getRowCount(); row < n; row++) {
+      if (((HomePieceOfFurniture)model.getValueAt(row, 0)).getLevel() != null) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
